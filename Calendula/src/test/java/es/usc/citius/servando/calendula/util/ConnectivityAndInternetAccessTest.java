@@ -28,8 +28,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+
+import org.mockito.InOrder;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 27)
@@ -284,6 +290,98 @@ public class ConnectivityAndInternetAccessTest {
         assertEquals(
                 "https://connectivitycheck.gstatic.com/generate_204",
                 result.getReachedHost());
+    }
+
+
+    @Test
+    public void mandatoryActiveProbeRunsBeforeActualBackendResolution() throws Exception {
+        NetworkFixture fixture = connectedWifi();
+        NetworkUtils.ActiveInternetProbe activeProbe =
+                mock(NetworkUtils.ActiveInternetProbe.class);
+        NetworkUtils.BackendHostResolver resolver =
+                mock(NetworkUtils.BackendHostResolver.class);
+
+        when(activeProbe.isReachable(fixture.context)).thenReturn(true);
+        when(resolver.resolves("www.aemps.gob.es", fixture.network)).thenReturn(true);
+
+        assertTrue(NetworkUtils.isBackendAvailable(
+                fixture.context,
+                "https://www.aemps.gob.es/cima/dochtml/p/example",
+                activeProbe,
+                resolver));
+
+        InOrder order = inOrder(activeProbe, resolver);
+        order.verify(activeProbe).isReachable(fixture.context);
+        order.verify(resolver).resolves("www.aemps.gob.es", fixture.network);
+    }
+
+    @Test
+    public void failedActiveProbePreventsBackendResolution() throws Exception {
+        NetworkFixture fixture = connectedWifi();
+        NetworkUtils.ActiveInternetProbe activeProbe =
+                mock(NetworkUtils.ActiveInternetProbe.class);
+        NetworkUtils.BackendHostResolver resolver =
+                mock(NetworkUtils.BackendHostResolver.class);
+
+        when(activeProbe.isReachable(fixture.context)).thenReturn(false);
+
+        assertFalse(NetworkUtils.isBackendAvailable(
+                fixture.context,
+                "https://www.aemps.gob.es/cima/dochtml/p/example",
+                activeProbe,
+                resolver));
+
+        verify(activeProbe).isReachable(fixture.context);
+        verifyNoMoreInteractions(resolver);
+    }
+
+    @Test
+    public void vpnWithoutUnderlyingNetworkStopsBeforeActiveProbe() throws Exception {
+        Context context = mock(Context.class);
+        ConnectivityManager manager = mock(ConnectivityManager.class);
+        Network vpn = mock(Network.class);
+        NetworkCapabilities vpnCapabilities = mock(NetworkCapabilities.class);
+        NetworkUtils.ActiveInternetProbe activeProbe =
+                mock(NetworkUtils.ActiveInternetProbe.class);
+        NetworkUtils.BackendHostResolver resolver =
+                mock(NetworkUtils.BackendHostResolver.class);
+
+        when(context.getSystemService(Context.CONNECTIVITY_SERVICE)).thenReturn(manager);
+        when(manager.getActiveNetwork()).thenReturn(vpn);
+        when(manager.getAllNetworks()).thenReturn(new Network[]{vpn});
+        when(manager.getNetworkCapabilities(vpn)).thenReturn(vpnCapabilities);
+        when(vpnCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_INTERNET)).thenReturn(true);
+        when(vpnCapabilities.hasTransport(
+                NetworkCapabilities.TRANSPORT_VPN)).thenReturn(true);
+        when(vpnCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_NOT_VPN)).thenReturn(false);
+
+        assertFalse(NetworkUtils.isBackendAvailable(
+                context,
+                "https://www.aemps.gob.es/cima/dochtml/p/example",
+                activeProbe,
+                resolver));
+
+        verify(activeProbe, never()).isReachable(context);
+        verifyNoMoreInteractions(resolver);
+    }
+
+    @Test
+    public void malformedBackendUrlNeverStartsMandatoryProbe() {
+        NetworkFixture fixture = connectedWifi();
+        NetworkUtils.ActiveInternetProbe activeProbe =
+                mock(NetworkUtils.ActiveInternetProbe.class);
+        NetworkUtils.BackendHostResolver resolver =
+                mock(NetworkUtils.BackendHostResolver.class);
+
+        assertFalse(NetworkUtils.isBackendAvailable(
+                fixture.context,
+                "not a URL",
+                activeProbe,
+                resolver));
+
+        verifyNoMoreInteractions(activeProbe, resolver);
     }
 
     private static ConnectivityAndInternetAccess.Builder baseBuilder() {

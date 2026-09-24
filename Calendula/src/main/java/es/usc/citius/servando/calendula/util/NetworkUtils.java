@@ -44,6 +44,8 @@ public final class NetworkUtils {
 
     private static final ConnectivityAndInternetAccess ACTIVE_CONNECTIVITY =
             new ConnectivityAndInternetAccess.Builder().build();
+    private static final ConnectivityAndInternetAccess STRICT_CONNECTIVITY =
+            ConnectivityAndInternetAccess.strictCaptivePortalBuilder().build();
 
     private static ConnectivityAndInternetAccess.NetworkObserver networkObserver;
     private static volatile ConnectivityAndInternetAccess.NetworkState latestState;
@@ -60,15 +62,29 @@ public final class NetworkUtils {
             new ActiveInternetProbe() {
                 @Override
                 public boolean isReachable(Context context) {
-                    ConnectivityAndInternetAccess.InternetResult result =
+                    ConnectivityAndInternetAccess.InternetResult active =
                             ACTIVE_CONNECTIVITY.checkInternetBlocking(context);
                     LogUtil.d(
                             TAG,
-                            "Active Internet preflight: reachable=" + result.isReachable()
-                                    + ", winner=" + result.getReachedHost()
-                                    + ", attempts=" + result.getAttemptedHosts().size()
-                                    + ", elapsedMs=" + result.getElapsedMilliseconds());
-                    return result.isReachable();
+                            "Active Internet preflight: reachable=" + active.isReachable()
+                                    + ", winner=" + active.getReachedHost()
+                                    + ", attempts=" + active.getAttemptedHosts().size()
+                                    + ", elapsedMs=" + active.getElapsedMilliseconds());
+                    if (!active.isReachable()) {
+                        return false;
+                    }
+
+                    // A transport-level success alone can still occur behind a captive portal.
+                    // Require the gist's strict HTTP 204 diagnostic before every real request.
+                    ConnectivityAndInternetAccess.InternetResult strict =
+                            STRICT_CONNECTIVITY.checkInternetBlocking(context);
+                    LogUtil.d(
+                            TAG,
+                            "Strict captive-portal preflight: reachable=" + strict.isReachable()
+                                    + ", winner=" + strict.getReachedHost()
+                                    + ", attempts=" + strict.getAttemptedHosts().size()
+                                    + ", elapsedMs=" + strict.getElapsedMilliseconds());
+                    return strict.isReachable();
                 }
             };
 
@@ -215,6 +231,10 @@ public final class NetworkUtils {
 
     public static boolean isVpnActive(final Context ctx) {
         return ctx != null && ConnectivityAndInternetAccess.vpnActive(ctx);
+    }
+
+    public static boolean hasUnderlyingNetwork(final Context ctx) {
+        return ctx != null && ConnectivityAndInternetAccess.hasUnderlyingNetwork(ctx);
     }
 
     public static ConnectivityAndInternetAccess.NetworkState latestState(final Context ctx) {

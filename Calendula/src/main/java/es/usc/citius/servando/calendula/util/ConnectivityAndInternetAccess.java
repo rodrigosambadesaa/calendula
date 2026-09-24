@@ -420,7 +420,7 @@ public final class ConnectivityAndInternetAccess {
         return canReachBackend(context, url, DEFAULT_HOST_RESOLVER);
     }
 
-    static boolean canReachBackend(Context context, String url, HostResolver resolver) {
+    static boolean canReachBackend(Context context, String url, final HostResolver resolver) {
         final String host = backendHost(url);
         if (host == null || resolver == null || !isConnected(context)) {
             return false;

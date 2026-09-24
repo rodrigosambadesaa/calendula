@@ -53,6 +53,7 @@ import com.mikepenz.iconics.IconicsDrawable;
 
 import org.joda.time.Duration;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
@@ -306,6 +307,12 @@ public class WebViewActivity extends CalendulaActivity {
         }.execute();
     }
 
+    private static boolean isRemoteHttpUrl(String targetUrl) {
+        return targetUrl != null
+                && (targetUrl.regionMatches(true, 0, "http://", 0, 7)
+                || targetUrl.regionMatches(true, 0, "https://", 0, 8));
+    }
+
     private void hideLoading() {
         if (loadingDialog != null)
             loadingDialog.dismiss();
@@ -413,13 +420,57 @@ public class WebViewActivity extends CalendulaActivity {
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            //use webview only for the requested URL or suburls, unless external links are enabled
+            // Use WebView only for the requested URL or suburls, unless external links are enabled.
             if (url.contains(originalUrl) || request.isExternalLinksEnabled()) {
+                if (isRemoteHttpUrl(url)) {
+                    // Returning true prevents the navigation from starting until the mandatory
+                    // active-probe + backend-host preflight has completed.
+                    loadBackendUrl(url, request);
+                    return true;
+                }
                 return super.shouldOverrideUrlLoading(view, url);
             } else {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
                 return true;
             }
+        }
+
+        @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
+            WebResourceResponse blocked = preflightWebResource(url);
+            return blocked != null ? blocked : super.shouldInterceptRequest(view, url);
+        }
+
+        @Override
+        public WebResourceResponse shouldInterceptRequest(
+                WebView view,
+                WebResourceRequest resourceRequest) {
+            String targetUrl = resourceRequest != null && resourceRequest.getUrl() != null
+                    ? resourceRequest.getUrl().toString()
+                    : null;
+            WebResourceResponse blocked = preflightWebResource(targetUrl);
+            return blocked != null
+                    ? blocked
+                    : super.shouldInterceptRequest(view, resourceRequest);
+        }
+
+        private WebResourceResponse preflightWebResource(String targetUrl) {
+            if (!isRemoteHttpUrl(targetUrl)) {
+                return null;
+            }
+
+            if (NetworkUtils.isBackendAvailable(
+                    getApplicationContext(),
+                    targetUrl)) {
+                return null;
+            }
+
+            LogUtil.w(TAG, "Blocking WebView request after failed mandatory preflight: "
+                    + targetUrl);
+            return new WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    new ByteArrayInputStream(new byte[0]));
         }
 
         @Override

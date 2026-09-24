@@ -1,0 +1,30 @@
+name: Full connectivity integration test
+
+on:
+  push:
+    branches:
+      - ci/full-connectivity-gist-20260924
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Java 17 for Android SDK tooling
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android 27 SDK
+        run: |
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-27" "build-tools;27.0.3"
+      - name: Use Java 8 for legacy Gradle/AGP
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Build and run unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleCiDebug testCiDebugUnitTest --stacktrace

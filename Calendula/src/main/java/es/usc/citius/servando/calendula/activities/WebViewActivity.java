@@ -23,6 +23,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.net.http.SslError;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -62,6 +63,7 @@ import es.usc.citius.servando.calendula.database.DB;
 import es.usc.citius.servando.calendula.util.HtmlCacheManager;
 import es.usc.citius.servando.calendula.util.IconUtils;
 import es.usc.citius.servando.calendula.util.LogUtil;
+import es.usc.citius.servando.calendula.util.NetworkUtils;
 
 public class WebViewActivity extends CalendulaActivity {
 
@@ -275,9 +277,33 @@ public class WebViewActivity extends CalendulaActivity {
             LogUtil.d(TAG, "setupWebView: Loading page from cache");
             webView.loadData(cachedData, "text/html; charset=UTF-8", null);
         } else {
-            LogUtil.d(TAG, "setupWebView: Loading page from URL");
-            webView.loadUrl(originalUrl);
+            LogUtil.d(TAG, "setupWebView: Checking backend before loading URL");
+            loadBackendUrl(originalUrl, request);
         }
+    }
+
+    private void loadBackendUrl(final String targetUrl, final WebViewRequest request) {
+        new AsyncTask<Void, Void, Boolean>() {
+            @Override
+            protected Boolean doInBackground(Void... params) {
+                return NetworkUtils.isBackendAvailable(getApplicationContext(), targetUrl);
+            }
+
+            @Override
+            protected void onPostExecute(Boolean available) {
+                if (isFinishing()) {
+                    return;
+                }
+                if (Boolean.TRUE.equals(available)) {
+                    webView.loadUrl(targetUrl);
+                } else {
+                    LogUtil.w(TAG, "Backend preflight failed for URL: " + targetUrl);
+                    showErrorToast(request.getConnectionErrorMessage());
+                    hideLoading();
+                    finish();
+                }
+            }
+        }.execute();
     }
 
     private void hideLoading() {
